@@ -1,0 +1,29 @@
+{
+  "name": "pumpkin",
+  "version": "0.1.0",
+  "description": "Minimalist rendering and effect library for web applications",
+  "homepage": "https://github.com/crlfe/pumpkin",
+  "bugs": "https://github.com/crlfe/pumpkin/issues",
+  "license": "BSD-3-Clause",
+  "main": "dist/pumpkin.js",
+  "types": "types/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite dev",
+    "dist": "tsc --build",
+    "lint": "eslint src"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.4",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.3",
+    "typescript-eslint": "^7.5.0",
+    "vite": "^5.2.8",
+    "vitest": "^1.4.0"
+  }
+}
