@@ -1,3 +1,5 @@
+import { isFunction } from "./util";
+
 export type Getter<T> = () => T;
 export type Setter<T> = (valueOrUpdate: ValueOrUpdate<T>) => void;
 
@@ -10,10 +12,6 @@ export type Signal<T> = {
   set: Setter<T>;
 };
 
-export type EffectHooks = {
-  onCleanup: (func: () => void) => void;
-};
-
 const enum EffectState {
   IDLE = 0,
   RECURSE = 1,
@@ -22,11 +20,11 @@ const enum EffectState {
 }
 
 type Effect = {
-  task: (context: EffectHooks) => void;
-  state: EffectState;
-  parent: Effect | null;
-  children: Effect[];
-  cleanups: (() => void)[];
+  task_: () => void;
+  state_: EffectState;
+  parent_: Effect | null;
+  children_: Effect[];
+  cleanups_: (() => void)[];
 };
 
 let globalEffect: Effect | null = null;
@@ -39,14 +37,14 @@ export const createSignal = <T>(value: T): Signal<T> => {
       const effect = globalEffect;
       if (effect && effect !== observers.at(-1)) {
         observers.push(effect);
+        // TODO: Periodically cull disposed observers to avoid leaking memory.
       }
       return value;
     },
     set(valueOrUpdate) {
-      const newValue =
-        typeof valueOrUpdate === "function"
-          ? valueOrUpdate(value)
-          : valueOrUpdate;
+      const newValue = isFunction(valueOrUpdate)
+        ? valueOrUpdate(value)
+        : valueOrUpdate;
       if (!equals(value, newValue)) {
         value = newValue;
         observers.forEach((effect) => scheduleEffect(effect));
@@ -56,69 +54,69 @@ export const createSignal = <T>(value: T): Signal<T> => {
   };
 };
 
-export const createEffect = <T>(task: (hooks: EffectHooks) => T): T => {
+export const createEffect = (task: () => void): void => {
   const savedEffect = globalEffect;
   try {
     const effect: Effect = {
-      task,
-      state: EffectState.IDLE,
-      parent: savedEffect,
-      children: [],
-      cleanups: [],
+      task_: task,
+      state_: EffectState.IDLE,
+      parent_: savedEffect,
+      children_: [],
+      cleanups_: [],
     };
+    savedEffect?.children_.push(effect);
     globalEffect = effect;
-    return task(createEffectHooks(effect));
+    task();
   } finally {
     globalEffect = savedEffect;
   }
 };
 
 const scheduleEffect = (effect: Effect): void => {
-  if (effect.state <= EffectState.RECURSE) {
-    effect.state = EffectState.EXECUTE;
-    for (let curr = effect; curr.parent; curr = curr.parent) {
-      if (curr.parent.state >= EffectState.RECURSE) {
+  if (effect.state_ <= EffectState.RECURSE) {
+    effect.state_ = EffectState.EXECUTE;
+
+    let root = effect;
+    while (root.parent_) {
+      if (root.parent_.state_ >= EffectState.RECURSE) {
         return; // Already scheduled.
       }
-      curr.parent.state = EffectState.RECURSE;
+      root.parent_.state_ = EffectState.RECURSE;
+      root = root.parent_;
     }
-    queueMicrotask(bindRunEffect(effect));
+    queueMicrotask(bindRunEffect(root));
   }
 };
 
 const bindRunEffect = (effect: Effect) => () => walkEffect(effect);
 
 const walkEffect = (effect: Effect) => {
-  if (effect.state === EffectState.RECURSE) {
-    effect.state = EffectState.IDLE;
-    effect.children.forEach((child) => walkEffect(child));
-  } else if (effect.state === EffectState.EXECUTE) {
+  if (effect.state_ === EffectState.RECURSE) {
+    effect.state_ = EffectState.IDLE;
+    effect.children_.forEach((child) => walkEffect(child));
+  } else if (effect.state_ === EffectState.EXECUTE) {
     const savedEffect = globalEffect;
     try {
-      effect.state = EffectState.IDLE;
+      effect.state_ = EffectState.IDLE;
       cleanupImpl(effect);
       globalEffect = effect;
-      effect.task(createEffectHooks(effect));
+      effect.task_();
     } finally {
       globalEffect = savedEffect;
     }
   }
 };
 
-const createEffectHooks = (effect: Effect): EffectHooks => {
-  return {
-    onCleanup(task) {
-      effect.cleanups.push(task);
-    },
-  };
+export const onCleanup = (task: () => void): void => {
+  globalEffect?.cleanups_.push(task);
 };
 
 const disposeEffects = (children: Effect[]): void => {
   children.forEach((effect) => {
-    if (effect.state < EffectState.DISPOSED) {
+    if (effect.state_ < EffectState.DISPOSED) {
       const savedEffect = globalEffect;
       try {
-        effect.state = EffectState.DISPOSED;
+        effect.state_ = EffectState.DISPOSED;
         cleanupImpl(effect);
       } finally {
         globalEffect = savedEffect;
@@ -128,9 +126,9 @@ const disposeEffects = (children: Effect[]): void => {
 };
 
 const cleanupImpl = (effect: Effect) => {
-  const { children, cleanups } = effect;
-  effect.children = [];
-  effect.cleanups = [];
+  const { children_: children, cleanups_: cleanups } = effect;
+  effect.children_ = [];
+  effect.cleanups_ = [];
   disposeEffects(children);
   cleanups.forEach((task) => task());
 };

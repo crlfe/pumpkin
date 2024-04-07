@@ -9,10 +9,11 @@
   "types": "types/index.d.ts",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build-examples": "node build-examples.js",
     "dev": "vite dev",
-    "dist": "tsc --build",
-    "lint": "eslint src"
+    "build": "tsc --build",
+    "lint": "eslint src",
+    "test": "vitest"
   },
   "engines": {
     "node": ">=20",

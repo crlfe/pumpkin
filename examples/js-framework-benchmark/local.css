@@ -1,0 +1,32 @@
+.jumbotron {
+  background-color: #7b7;
+  padding: 10px;
+}
+.btn {
+  width: 200px;
+}
+.table {
+  table-layout: fixed;
+  font-family: Arial;
+  font-size: 15px;
+}
+.table tr {
+  height: 20px;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+}
+.col-md-1 {
+  width: 50px;
+}
+.col-md-4 {
+  width: 350px;
+}
+.col-md-6 {
+  width: 400px;
+}
+.glyphicon-remove:after {
+  content: "x";
+}
+tr.danger td {
+  background-color: #faa;
+}
