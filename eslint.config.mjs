@@ -7,7 +7,14 @@ const config = tseslint.config(
   tseslint.configs.strict,
   tseslint.configs.stylistic,
   {
-    ignores: ["coverage", "dist"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+      },
+    },
+  },
+  {
+    ignores: ["coverage", "**/dist"],
   },
 );
 

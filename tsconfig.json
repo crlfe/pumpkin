@@ -25,5 +25,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "exclude": ["coverage", "dist", "**/*.test.ts", "**/*.test-d.ts"]
+  "exclude": ["coverage", "**/dist", "**/*.test.ts", "**/*.test-d.ts"]
 }

@@ -1,7 +1,7 @@
-import { defineConfig } from "rollup";
+import * as Rollup from "rollup";
 import swc from "@rollup/plugin-swc";
 
-export default defineConfig({
+export default Rollup.defineConfig({
   plugins: [swc()],
   input: "src/index.ts",
   output: [
