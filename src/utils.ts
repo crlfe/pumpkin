@@ -2,13 +2,12 @@ const LocalPromise = Promise;
 
 export { LocalPromise as Promise };
 
-export const promiseWithResolvers = <T>() => {
-  let resolve: (value: T) => void, reject: (reason?: unknown) => void;
-  const promise = new LocalPromise<T>((res, rej) => {
+export const promiseAndResolve = <T>() => {
+  let resolve: (value: T) => void;
+  const promise = new Promise<T>((res) => {
     resolve = res;
-    reject = rej;
   });
-  // Promise executes its callback synchronously, so resolve and reject must be set now.
+  // Promise executes its callback synchronously, so resolve must be set now.
   /* eslint-disable-next-line @typescript-eslint/no-non-null-assertion */
-  return [promise, resolve!, reject!] as const;
+  return { promise_: promise, resolve_: resolve! };
 };

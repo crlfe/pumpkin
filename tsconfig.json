@@ -23,7 +23,12 @@
     "noPropertyAccessFromIndexSignature": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+
+    "rootDir": ".",
+    "paths": {
+      "@crlfe.ca/pumpkin": ["./src/index.ts"]
+    }
   },
   "exclude": ["coverage", "**/dist", "**/*.test.ts", "**/*.test-d.ts"]
 }

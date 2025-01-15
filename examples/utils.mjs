@@ -1,4 +1,26 @@
 import NodeFsPromises from "node:fs/promises";
+import NodePath from "node:path";
+
+/**
+ * @returns {Promise<string[]>}
+ */
+export async function getExamples() {
+  const root = import.meta.dirname;
+  const examples = [];
+  for await (const entry of await NodeFsPromises.opendir(root, {
+    recursive: true,
+  })) {
+    const path = NodePath.join(entry.parentPath, entry.name);
+    if (
+      entry.isDirectory() &&
+      (await canRead(NodePath.join(path, "app.ts"))) &&
+      (await canRead(NodePath.join(path, "index.html")))
+    ) {
+      examples.push(NodePath.relative(root, path));
+    }
+  }
+  return examples;
+}
 
 /**
  * @param {string} path

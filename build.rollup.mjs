@@ -1,5 +1,5 @@
-import * as Rollup from "rollup";
 import swc from "@rollup/plugin-swc";
+import * as Rollup from "rollup";
 
 export default Rollup.defineConfig({
   plugins: [swc()],

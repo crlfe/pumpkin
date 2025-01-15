@@ -1,69 +1,115 @@
-import { Promise, promiseWithResolvers } from "./utils.ts";
-
-type Bit = 0 | 1;
-
 interface Scope {
-  observes_: Set<Promise<Bit>>;
-  disposes_: (() => void)[];
+  key_: number;
+  next_(): void;
+  readonly cleanups_: (Effect | (() => void))[];
 }
+
+const runInScope = <Args extends unknown[], T>(
+  scope: Scope | undefined,
+  workFn: (...args: Args) => T,
+  ...args: Args
+): T => {
+  const savedScope = currentScope;
+  try {
+    currentScope = scope;
+    return workFn(...args);
+  } finally {
+    currentScope = savedScope;
+  }
+};
 
 let currentScope: Scope | undefined;
 
-export const createSignal = <T>(value: T) => {
-  let [changed, resolveChanged] = promiseWithResolvers<Bit>();
-  let curr = value;
-  return {
-    get: () => {
-      currentScope?.observes_.add(changed);
-      return curr;
-    },
-    set: (value: T) => {
-      curr = value;
-      resolveChanged(0);
-      [changed, resolveChanged] = promiseWithResolvers<Bit>();
-    },
-  };
-};
+export class Signal<T> {
+  value_: T;
+  observers_: { scope_: Scope; key_: number }[] = [];
+  check_ = 0;
 
-export const createEffect = (workFn: () => void): void => {
-  const [closed, resolveClosed] = promiseWithResolvers<1>();
-  const self: Scope = {
-    observes_: new Set([closed]),
-    disposes_: [],
-  };
+  constructor(value: T) {
+    this.value_ = value;
+  }
+  get(): T {
+    if (currentScope) {
+      const observers = this.observers_;
 
-  const runDisposes = (): void => {
-    self.disposes_.reverse().forEach((f) => f());
-    self.disposes_.length = 0;
-  };
-
-  const run = (): void => {
-    const savedScope = currentScope;
-    try {
-      currentScope = self;
-      workFn();
-    } finally {
-      currentScope = savedScope;
-    }
-
-    Promise.race(self.observes_).then((done) => {
-      if (!done) {
-        runDisposes();
-        run();
+      // Occasionally clean up obsolete observers.
+      if (this.check_ < 16 || this.check_ < observers.length / 2) {
+        this.check_++;
+      } else {
+        let kept = 0;
+        for (const item of observers) {
+          if (item.scope_.key_ === item.key_) {
+            observers[kept++] = item;
+          }
+        }
+        observers.length = kept;
+        this.check_ = 0;
       }
-    });
-    self.observes_.clear();
-    self.observes_.add(closed);
-  };
+      observers.push({ scope_: currentScope, key_: currentScope.key_ });
+    }
+    return this.value_;
+  }
+  set(value: T) {
+    this.value_ = value;
+    const obs = this.observers_;
+    if (obs) {
+      for (const observer of obs) {
+        if (observer.scope_.key_ === observer.key_) {
+          observer.scope_.next_();
+        }
+      }
+      obs.length = 0;
+    }
+  }
+  update(updateFn: (value: T) => T): void {
+    this.set(updateFn(this.value_));
+  }
+}
 
-  onDispose(() => {
-    runDisposes();
-    resolveClosed(1);
-  });
+export class Effect {
+  readonly workFn_: () => void;
+  readonly cleanups_: (() => void)[] = [];
+  key_ = 0;
 
-  run();
+  constructor(workFn: () => void) {
+    this.workFn_ = workFn;
+    runInScope(this, this.workFn_);
+    onCleanup(this.return_.bind(this));
+  }
+
+  private runCleanups_(): void {
+    const cleanups = this.cleanups_;
+    for (const cleanup of cleanups.reverse()) {
+      cleanup();
+    }
+    cleanups.length = 0;
+  }
+
+  next_(): void {
+    this.key_++;
+    queueMicrotask(this.run_.bind(this));
+  }
+
+  return_(): void {
+    this.key_++;
+    this.runCleanups_();
+  }
+
+  run_(): void {
+    this.runCleanups_();
+    runInScope(this, this.workFn_);
+  }
+}
+
+export const createSignal = <T>(value: T): Signal<T> => new Signal(value);
+export const createEffect = (workFn: () => void): Effect => new Effect(workFn);
+export const onCleanup = (workFn: () => void): void => {
+  currentScope?.cleanups_.push(workFn);
 };
 
-export const onDispose = (disposeFn: () => void) => {
-  currentScope?.disposes_.push(disposeFn);
+export const saveEffectScope = <Args extends unknown[], T>(
+  workFn: (...args: Args) => T,
+) => {
+  const scope = currentScope;
+  return (...args: Args) => runInScope(scope, workFn, ...args);
 };
