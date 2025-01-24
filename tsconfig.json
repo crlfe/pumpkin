@@ -7,7 +7,6 @@
     "module": "ES2022",
     "moduleResolution": "Bundler",
 
-    "allowImportingTsExtensions": true,
     "checkJs": true,
     "esModuleInterop": false,
     "isolatedModules": true,

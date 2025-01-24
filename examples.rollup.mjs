@@ -1,4 +1,5 @@
 import rollupPluginAlias from "@rollup/plugin-alias";
+import rollupPluginNodeResolve from "@rollup/plugin-node-resolve";
 import rollupPluginSwc from "@rollup/plugin-swc";
 import rollupPluginTerser from "@rollup/plugin-terser";
 import NodeFsPromise from "node:fs/promises";
@@ -20,6 +21,9 @@ const defaultOptions = {
       entries: {
         "@crlfe.ca/pumpkin": NodePath.join(projectDir, "src/index.ts"),
       },
+    }),
+    rollupPluginNodeResolve({
+      extensions: [".ts"],
     }),
     rollupPluginSwc(),
     rollupPluginTerser({

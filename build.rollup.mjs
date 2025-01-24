@@ -1,8 +1,12 @@
-import swc from "@rollup/plugin-swc";
+import rollupPluginSwc from "@rollup/plugin-swc";
+import rollupPluginNodeResolve from "@rollup/plugin-node-resolve";
 import * as Rollup from "rollup";
 
 export default Rollup.defineConfig({
-  plugins: [swc()],
+  plugins: [
+    rollupPluginNodeResolve({ extensions: [".ts"] }),
+    rollupPluginSwc(),
+  ],
   input: "src/index.ts",
   output: [
     {

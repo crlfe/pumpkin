@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { createEffect, createSignal, onCleanup } from ".";
-import "./test-utils.ts";
+import "./test-utils";
 
 test("single signal", async () => {
   vi.useFakeTimers();

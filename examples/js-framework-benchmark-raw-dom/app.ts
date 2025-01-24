@@ -7,7 +7,7 @@ import {
   Signal,
 } from "@crlfe.ca/pumpkin";
 
-import { adjectives, colours, nouns } from "./words.ts";
+import { adjectives, colours, nouns } from "./words";
 
 interface Row {
   id: number;
