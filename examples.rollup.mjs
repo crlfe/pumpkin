@@ -32,7 +32,7 @@ const defaultOptions = {
       },
       mangle: {
         properties: {
-          regex: "_$",
+          regex: "^_",
         },
       },
     }),
@@ -88,7 +88,7 @@ async function findExampleBuilds() {
         const sourcePrefix = fileURLToPath(
           scriptUrl.href.slice(0, distPos) +
             "/" +
-            scriptUrl.href.slice(distPos + 6).replace(/\.js$/, ""),
+            scriptUrl.href.slice(distPos + 6).replace(/\.js$/, "."),
         );
 
         const sourcePrefixDir = NodePath.dirname(sourcePrefix);

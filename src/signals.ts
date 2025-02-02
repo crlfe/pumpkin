@@ -1,115 +1,166 @@
-interface Scope {
-  key_: number;
-  next_(): void;
-  readonly cleanups_: (Effect | (() => void))[];
+import {
+  isFunction,
+  Nullish,
+  TinySet,
+  tinySetAdd,
+  tinySetDelete,
+  tinySetIterable,
+} from "./utils";
+
+export class Signal<T> {
+  _value: T;
+  _observers: TinySet<Effect>;
+
+  constructor(value: T) {
+    this._value = value;
+  }
+
+  get(): T {
+    if (_effectCurrent && _effectCurrent._state & EffectState.RUNNING) {
+      this._observers = tinySetAdd(this._observers, _effectCurrent);
+      _effectCurrent._observing = tinySetAdd(_effectCurrent._observing, this);
+    }
+    return this._value;
+  }
+
+  set(value: T): void {
+    this._value = value;
+
+    for (const observer of tinySetIterable(this._observers)) {
+      observer.update();
+    }
+    this._observers = null;
+  }
+
+  update(fn: (value: T) => T): void {
+    this.set(fn(this._value));
+  }
 }
 
-const runInScope = <Args extends unknown[], T>(
-  scope: Scope | undefined,
-  workFn: (...args: Args) => T,
-  ...args: Args
-): T => {
-  const savedScope = currentScope;
+const enum EffectState {
+  ZERO = 0,
+  PENDING = 1,
+  RUNNING = 2,
+  DISPOSED = 4,
+}
+
+let _effectCurrent: Effect | Nullish;
+let _effectQueue: Effect[] | Nullish;
+
+export class Effect {
+  static onCleanup(fn: () => void): void {
+    if (_effectCurrent) {
+      if (_effectCurrent._cleanups) {
+        _effectCurrent._cleanups.push(fn);
+      } else {
+        _effectCurrent._cleanups = [fn];
+      }
+    }
+  }
+
+  static wrap<A extends unknown[], R>(fn: (...args: A) => R) {
+    return (_runInEffect<A, R>).bind(null, _effectCurrent, fn);
+  }
+
+  _state: EffectState;
+  _fn?: () => void;
+  _observing: TinySet<Signal<unknown>>;
+  _cleanups?: (Effect | (() => void))[];
+
+  constructor(fn: () => void) {
+    this._state = EffectState.PENDING;
+    this._fn = fn;
+
+    _effectCurrent?._cleanups?.push(this);
+    _runEffectSync(this);
+  }
+
+  update() {
+    if (!(this._state & (EffectState.PENDING | EffectState.DISPOSED))) {
+      this._state |= EffectState.PENDING;
+      const queue = _effectQueue;
+      if (queue) {
+        queue.push(this);
+      } else {
+        _effectQueue = [this];
+        queueMicrotask(_runEffectQueue);
+      }
+    }
+  }
+
+  dispose() {
+    this._state = EffectState.DISPOSED;
+    _runEffectCleanups(this);
+  }
+}
+
+const _runInEffect = <A extends unknown[], R>(
+  effect: Effect | Nullish,
+  fn: (...args: A) => R,
+  ...args: A
+): R => {
+  const pushedEffect = _effectCurrent;
   try {
-    currentScope = scope;
-    return workFn(...args);
+    _effectCurrent = effect;
+    return fn(...args);
   } finally {
-    currentScope = savedScope;
+    _effectCurrent = pushedEffect;
   }
 };
 
-let currentScope: Scope | undefined;
-
-export class Signal<T> {
-  value_: T;
-  observers_: { scope_: Scope; key_: number }[] = [];
-  check_ = 0;
-
-  constructor(value: T) {
-    this.value_ = value;
+const _runEffectQueue = (): void => {
+  const queue = _effectQueue;
+  if (queue) {
+    _effectQueue = null;
+    for (const effect of queue) {
+      if (
+        effect._state & EffectState.PENDING &&
+        !(effect._state & EffectState.DISPOSED)
+      ) {
+        try {
+          _runEffectCleanups(effect);
+          _runEffectSync(effect);
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    }
+    _effectCurrent = null;
   }
-  get(): T {
-    if (currentScope) {
-      const observers = this.observers_;
+};
 
-      // Occasionally clean up obsolete observers.
-      if (this.check_ < 16 || this.check_ < observers.length / 2) {
-        this.check_++;
+const _runEffectSync = (effect: Effect): void => {
+  const fn = effect._fn;
+  const pushedEffect = _effectCurrent;
+  if (fn) {
+    try {
+      _effectCurrent = effect;
+      effect._state =
+        (effect._state & ~EffectState.PENDING) | EffectState.RUNNING;
+      fn();
+    } finally {
+      effect._state &= ~EffectState.RUNNING;
+      _effectCurrent = pushedEffect;
+    }
+  }
+};
+
+const _runEffectCleanups = (effect: Effect): void => {
+  for (const signal of tinySetIterable(effect._observing)) {
+    tinySetDelete(signal._observers, effect);
+  }
+  effect._observing = null;
+
+  const cleanups = effect._cleanups;
+  if (cleanups) {
+    for (let i = cleanups.length - 1; i >= 0; i--) {
+      const cleanup = cleanups[i] as Effect | (() => void);
+      if (isFunction(cleanup)) {
+        cleanup();
       } else {
-        let kept = 0;
-        for (const item of observers) {
-          if (item.scope_.key_ === item.key_) {
-            observers[kept++] = item;
-          }
-        }
-        observers.length = kept;
-        this.check_ = 0;
+        cleanup.dispose();
       }
-      observers.push({ scope_: currentScope, key_: currentScope.key_ });
-    }
-    return this.value_;
-  }
-  set(value: T) {
-    this.value_ = value;
-    const obs = this.observers_;
-    if (obs) {
-      for (const observer of obs) {
-        if (observer.scope_.key_ === observer.key_) {
-          observer.scope_.next_();
-        }
-      }
-      obs.length = 0;
-    }
-  }
-  update(updateFn: (value: T) => T): void {
-    this.set(updateFn(this.value_));
-  }
-}
-
-export class Effect {
-  readonly workFn_: () => void;
-  readonly cleanups_: (() => void)[] = [];
-  key_ = 0;
-
-  constructor(workFn: () => void) {
-    this.workFn_ = workFn;
-    runInScope(this, this.workFn_);
-    onCleanup(this.return_.bind(this));
-  }
-
-  private runCleanups_(): void {
-    const cleanups = this.cleanups_;
-    for (const cleanup of cleanups.reverse()) {
-      cleanup();
     }
     cleanups.length = 0;
   }
-
-  next_(): void {
-    this.key_++;
-    queueMicrotask(this.run_.bind(this));
-  }
-
-  return_(): void {
-    this.key_++;
-    this.runCleanups_();
-  }
-
-  run_(): void {
-    this.runCleanups_();
-    runInScope(this, this.workFn_);
-  }
-}
-
-export const createSignal = <T>(value: T): Signal<T> => new Signal(value);
-export const createEffect = (workFn: () => void): Effect => new Effect(workFn);
-export const onCleanup = (workFn: () => void): void => {
-  currentScope?.cleanups_.push(workFn);
-};
-
-export const saveEffectScope = <Args extends unknown[], T>(
-  workFn: (...args: Args) => T,
-) => {
-  const scope = currentScope;
-  return (...args: Args) => runInScope(scope, workFn, ...args);
 };

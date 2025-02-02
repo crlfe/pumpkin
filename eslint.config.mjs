@@ -19,7 +19,7 @@ const config = tseslint.config(
     },
   },
   {
-    files: ["examples/**/*.ts", "tests/**/*ts"],
+    files: ["examples/**/*.ts", "src/**/*.test.ts", "tests/**/*ts"],
     rules: {
       // The examples and tests often have quick DOM manipulation code,
       // where it is very convenient to be able to "!" past values that

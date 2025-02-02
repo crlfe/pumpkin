@@ -1,14 +1,14 @@
 import { expect, test, vi } from "vitest";
-import { createEffect, createSignal, onCleanup } from ".";
+import { Effect, Signal } from ".";
 import "./test-utils";
 
 test("single signal", async () => {
   vi.useFakeTimers();
 
-  const counter = createSignal(0);
+  const counter = new Signal(0);
 
   const events: number[] = [];
-  createEffect(() => {
+  new Effect(() => {
     events.push(counter.get());
   });
 
@@ -28,10 +28,10 @@ test("single signal", async () => {
 test("repeated set", async () => {
   vi.useFakeTimers();
 
-  const counter = createSignal(0);
+  const counter = new Signal(0);
 
   const events: number[] = [];
-  createEffect(() => {
+  new Effect(() => {
     events.push(counter.get());
   });
 
@@ -46,11 +46,11 @@ test("repeated set", async () => {
 test("concurrent set", async () => {
   vi.useFakeTimers();
 
-  const letter = createSignal("A");
-  const number = createSignal("1");
+  const letter = new Signal("A");
+  const number = new Signal("1");
 
   const events: string[] = [];
-  createEffect(() => {
+  new Effect(() => {
     events.push(letter.get() + number.get());
   });
 
@@ -65,25 +65,25 @@ test("concurrent set", async () => {
 test("nested effects", async () => {
   vi.useFakeTimers();
 
-  const a = createSignal("A");
-  const b = createSignal("B");
-  const c = createSignal("C");
+  const a = new Signal("A");
+  const b = new Signal("B");
+  const c = new Signal("C");
 
   const events: string[] = [];
-  createEffect(() => {
+  new Effect(() => {
     const av = a.get();
     events.push(av);
-    onCleanup(() => events.push(`-${av}`));
+    Effect.onCleanup(() => events.push(`-${av}`));
 
-    createEffect(() => {
+    new Effect(() => {
       const bv = b.get();
       events.push(bv);
-      onCleanup(() => events.push(`-${bv}`));
+      Effect.onCleanup(() => events.push(`-${bv}`));
 
-      createEffect(() => {
+      new Effect(() => {
         const cv = c.get();
         events.push(cv);
-        onCleanup(() => events.push(`-${cv}`));
+        Effect.onCleanup(() => events.push(`-${cv}`));
       });
     });
   });
@@ -97,3 +97,71 @@ test("nested effects", async () => {
     ["A", "B", "C", "-C", "-B", "B2", "C"],
   );
 });
+
+test("memory size", async () => {
+  vi.useFakeTimers();
+
+  const ns = [1e3, 1e4, 5e4, 1e5];
+  const gs = [1, 8, 32, 64];
+  const base = await runMemoryUsage(ns[0], ns[0], gs[0]);
+
+  let signalsAvg = 0;
+  let effectsAvg = 0;
+  let readersAvg = 0;
+  for (let i = 1; i < ns.length; i++) {
+    signalsAvg += await runMemoryPerItem(ns[i], ns[0], gs[0], base);
+    effectsAvg += await runMemoryPerItem(ns[0], ns[i], gs[0], base);
+    readersAvg += await runMemoryPerItem(ns[0], ns[0], gs[i], base);
+  }
+
+  signalsAvg /= ns.length - 1;
+  effectsAvg /= ns.length - 1;
+  readersAvg /= ns.length - 1;
+
+  console.log("memory per signal:", signalsAvg.toFixed(1));
+  console.log("memory per effect:", effectsAvg.toFixed(1));
+  console.log("memory per reader:", readersAvg.toFixed(1));
+});
+
+async function runMemoryPerItem(
+  numSignals: number,
+  numEffects: number,
+  numGets: number,
+  base: number,
+): Promise<number> {
+  const used = await runMemoryUsage(numSignals, numEffects, numGets);
+  return (used - base) / (numSignals + numEffects * (1 + numGets));
+}
+
+async function runMemoryUsage(
+  numSignals: number,
+  numEffects: number,
+  numGets: number,
+): Promise<number> {
+  gc!();
+
+  const signals = new Array<Signal<number>>(numSignals);
+  for (let i = 0; i < numSignals; i++) {
+    signals[i] = new Signal(i);
+  }
+
+  const effects = new Array<Effect>(numEffects);
+  for (let i = 0; i < numEffects; i++) {
+    effects[i] = new Effect(() => {
+      for (let j = 0; j < numGets; j++) {
+        signals[(i + j) % numSignals].get();
+      }
+    });
+  }
+
+  await vi.runAllTimersAsync();
+
+  for (let i = 0; i < numSignals; i++) {
+    signals[i].update((v) => v + 1);
+  }
+
+  await vi.runAllTimersAsync();
+
+  gc!();
+  return process.memoryUsage().heapUsed;
+}

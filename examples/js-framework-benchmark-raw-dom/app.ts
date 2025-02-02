@@ -1,11 +1,4 @@
-import {
-  createEffect,
-  createSignal,
-  Effect,
-  onCleanup,
-  saveEffectScope,
-  Signal,
-} from "@crlfe.ca/pumpkin";
+import { Effect, Signal } from "@crlfe.ca/pumpkin";
 
 import { adjectives, colours, nouns } from "./words";
 
@@ -14,54 +7,62 @@ interface Row {
   label: Signal<string>;
 }
 
-const rows = createSignal<Row[]>([]);
-const selectedRow = createSignal<number>(-1);
-const rowSelected = new Map<number, Signal<boolean>>();
+const rows = new Signal<Row[]>([]);
+const selectedRow = new Signal<number>(-1);
+const rowIsSelected = new Map<number, Signal<boolean>>();
 
 let lastSelectedRow = -1;
-createEffect(() => {
+new Effect(() => {
   const nextSelectedRow = selectedRow.get();
   if (lastSelectedRow !== nextSelectedRow) {
-    rowSelected.get(lastSelectedRow)?.set(false);
-    rowSelected.get(nextSelectedRow)?.set(true);
+    rowIsSelected.get(lastSelectedRow)?.set(false);
+    rowIsSelected.get(nextSelectedRow)?.set(true);
     lastSelectedRow = nextSelectedRow;
   }
 });
 
+const pickRandom = (src: string[]): string =>
+  src[Math.floor(Math.random() * src.length)]!;
+
 const makeLabel = () =>
-  [adjectives, colours, nouns]
-    .map((xs) => xs[Math.floor(Math.random() * xs.length)])
-    .join(" ");
+  pickRandom(adjectives) + " " + pickRandom(colours) + " " + pickRandom(nouns);
 
 let nextRowId = 1;
-const makeRows = (length: number): Row[] =>
-  Array.from({ length }, () => ({
-    id: nextRowId++,
-    label: createSignal(makeLabel()),
-  }));
+const makeRows = (length: number): Row[] => {
+  const dst = new Array(length);
+  for (let i = 0; i < length; i++) {
+    dst[i] = { id: nextRowId++, label: new Signal(makeLabel()) };
+  }
+  return dst;
+};
 
 const selectRow = (id: number) => {
   selectedRow.set(id);
 };
 
 const deleteRow = (id: number) => {
-  rows.set(rows.get().filter((curr) => curr.id !== id));
+  const prev = rows.get();
+  for (let i = 0, n = prev.length; i < n; i++) {
+    if (prev[i]!.id === id) {
+      rows.set(prev.slice(0, i).concat(prev.slice(i + 1)));
+    }
+  }
 };
 
 const appTemplate = document.createElement("template");
-appTemplate.innerHTML = [
-  `<div class="container">`,
-  `<div class="jumbotron">`,
-  `<div class="row">`,
-  `<div class="col-md-6"><h1>Pumpkin</h1></div>`,
-  `<div class="col-md-6" id="menu"></div>`,
-  `</div>`,
-  `</div>`,
-  `<table class="table table-hover table-striped test-data">`,
-  `<tbody id="tbody"></tbody>`,
-  `</table>`,
-  `</div>`,
-].join("");
+appTemplate.innerHTML = `\
+<div class="container">\
+<div class="jumbotron">\
+<div class="row">\
+<div class="col-md-6"><h1>Pumpkin</h1></div>\
+<div class="col-md-6" id="menu"></div>\
+</div>\
+</div>\
+<table class="table table-hover table-striped test-data">\
+<tbody id="tbody"></tbody>\
+</table>\
+<span class="preloadicon glyphicon glyphicon-remove" aria-hidden="true"></span>\
+</div>`;
 document.body.append(appTemplate.content);
 
 const menu: Record<string, [string, EventListener]> = {
@@ -92,11 +93,10 @@ const menu: Record<string, [string, EventListener]> = {
   update: [
     "Update every 10th row",
     () => {
-      rows.get().forEach((row, i) => {
-        if (i % 10 === 0) {
-          row.label.update((t) => t + " !!!");
-        }
-      });
+      const prev = rows.get();
+      for (let i = 0, n = prev.length; i < n; i += 10) {
+        prev[i]!.label.update((t) => t + " !!!");
+      }
     },
   ],
   swaprows: [
@@ -114,13 +114,12 @@ const menu: Record<string, [string, EventListener]> = {
 };
 
 const menuTemplate = document.createElement("template");
-menuTemplate.innerHTML = [
-  `<div class="row">`,
-  `<div class="col-sm-6 smallpad">`,
-  `<button class="btn btn-primary btn-block"></button>`,
-  `</div>`,
-  `</div>`,
-].join("");
+menuTemplate.innerHTML = `\
+<div class="row">\
+<div class="col-sm-6 smallpad">\
+<button class="btn btn-primary btn-block"></button>\
+</div>\
+</div>`;
 
 document.getElementById("menu")?.replaceChildren(
   ...Object.entries(menu).map(([id, [name, callback]]) => {
@@ -135,22 +134,21 @@ document.getElementById("menu")?.replaceChildren(
 );
 
 const rowTemplate = document.createElement("template");
-rowTemplate.innerHTML = [
-  `<tr>`,
-  `<td class="col-md-1"></td>`,
-  `<td class="col-md-4"><a></a></td>`,
-  `<td class="col-md-1">`,
-  `<a><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a>`,
-  `</td>`,
-  `<td class="col-md-6"></td>`,
-  `</tr>`,
-].join("");
+rowTemplate.innerHTML = `\
+<tr>\
+<td class="col-md-1"></td>\
+<td class="col-md-4"><a></a></td>\
+<td class="col-md-1">\
+<a><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a>\
+</td>\
+<td class="col-md-6"></td>\
+</tr>`;
 
 const tbody = document.getElementById("tbody");
 if (tbody) {
-  const mapFn = saveEffectScope((row: Row) => {
+  const mapFn = Effect.wrap((row: Row) => {
     let tr: Element;
-    const effect = createEffect(() => {
+    const effect = new Effect(() => {
       const { id, label } = row;
 
       tr = (rowTemplate.content.cloneNode(true) as DocumentFragment)
@@ -163,38 +161,32 @@ if (tbody) {
 
       td0.textContent = String(id);
 
-      const thisRowSelected = createSignal(false);
-      rowSelected.set(id, thisRowSelected);
-      onCleanup(rowSelected.delete.bind(rowSelected, id));
+      const thisRowIsSelected = new Signal(false);
+      rowIsSelected.set(id, thisRowIsSelected);
+      Effect.onCleanup(rowIsSelected.delete.bind(rowIsSelected, id));
 
-      createEffect(() => {
-        if (thisRowSelected.get()) {
+      new Effect(() => {
+        if (thisRowIsSelected.get()) {
           tr.setAttribute("class", "danger");
         } else {
           tr.removeAttribute("class");
         }
       });
 
-      createEffect(() => {
+      new Effect(() => {
         a1.textContent = label.get();
       });
 
-      const a1Listener = selectRow.bind(selectRow, id);
-      const a2Listener = deleteRow.bind(deleteRow, id);
-      a1.addEventListener("click", a1Listener);
-      a2.addEventListener("click", a2Listener);
-
-      onCleanup(() => {
-        a1.removeEventListener("click", a1Listener);
-        a2.removeEventListener("click", a2Listener);
-      });
+      // DOM nodes are never reused, so event listeners should GC.
+      a1.addEventListener("click", () => selectRow(id));
+      a2.addEventListener("click", () => deleteRow(id));
     });
     return [tr!, effect] as const;
   });
 
   let lastItems: Row[] = [];
   let lastNodes: (readonly [Node, Effect])[] = [];
-  createEffect(() => {
+  new Effect(() => {
     const nextItems = rows.get();
     const nextNodes = new Array<readonly [Node, Effect]>(nextItems.length);
 
@@ -208,9 +200,12 @@ if (tbody) {
 
     let stateByItem: Map<Row, [Node, Effect, number]> | undefined;
     const getStateByItem = (row: Row): [Node, Effect, number] | undefined => {
-      stateByItem ??= new Map(
-        lastItems.map((row, i) => [row, [...lastNodes[i]!, i]]),
-      );
+      if (!stateByItem) {
+        stateByItem = new Map();
+        for (let i = 0, n = lastItems.length; i < n; i++) {
+          stateByItem.set(lastItems[i]!, [...lastNodes[i]!, i]);
+        }
+      }
       return stateByItem.get(row);
     };
 
@@ -249,23 +244,21 @@ if (tbody) {
       }
     }
 
-    removed.forEach((i) => {
-      lastNodes[i]![1].return_();
-    });
+    for (const i of removed) {
+      lastNodes[i]![1].dispose();
+    }
 
     if (next < nextEnd) {
-      tbody.append(
-        ...nextItems.slice(next).map((row, i) => {
-          const node = mapFn(row);
-          nextNodes[next + i] = node;
-          return node[0];
-        }),
-      );
+      for (let i = next, n = nextItems.length; i < n; i++) {
+        const node = mapFn(nextItems[i]!);
+        nextNodes[next + i] = node;
+        tbody.append(node[0]);
+      }
     }
     if (last < lastEnd) {
       while (last < lastEnd) {
         const node = lastNodes[last++]!;
-        node[1].return_();
+        node[1].dispose();
         tbody.removeChild(node[0]);
       }
     }
